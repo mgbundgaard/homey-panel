@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Hjem">
+  <meta name="theme-color" content="#0e1116">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <title>Hjem</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="clock">
+      <div id="time">--:--</div>
+      <div id="date"></div>
+    </div>
+    <div class="topbar-right">
+      <span id="status" class="status" title="Forbindelse"></span>
+      <button class="icon-btn" data-action="open-settings" aria-label="Indstillinger">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="col">
+      <h2>Klima</h2>
+      <div id="climate"></div>
+    </section>
+    <section class="col col-wide">
+      <h2>Lys</h2>
+      <div id="lights"></div>
+    </section>
+    <section class="col">
+      <h2>Musik</h2>
+      <div id="speakers"></div>
+      <h2>Stemninger</h2>
+      <div id="moods" class="chips"></div>
+      <h2>Flows</h2>
+      <div id="flows" class="chips"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <dialog id="settings">
+    <form method="dialog" class="settings-inner" id="settings-form">
+      <div class="settings-head">
+        <h2>Indstillinger</h2>
+        <button class="icon-btn" value="cancel" aria-label="Luk">✕</button>
+      </div>
+
+      <label>Homey-adresse
+        <input id="cfg-address" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+               placeholder="192.168.1.50 eller https://…">
+        <small>Skriv Homeys IP-adresse — den laves automatisk om til en sikker https://…homeylocal.com-adresse.
+          Uden for hjemmet: <code>https://&lt;homey-id&gt;.connect.athom.com</code></small>
+      </label>
+
+      <label>API-nøgle
+        <input id="cfg-token" type="password" autocomplete="off" placeholder="Indsæt nøglen fra Homey Web App">
+        <small>Opret den i my.homey.app → Indstillinger → API Keys. Nøglen gemmes kun på denne iPad.</small>
+      </label>
+
+      <div class="row">
+        <button type="button" class="btn" data-action="test">Test forbindelse</button>
+        <button type="button" class="btn ghost" data-action="demo">Prøv demo</button>
+        <span id="test-result" class="muted"></span>
+      </div>
+
+      <label class="inline"><input id="cfg-night" type="checkbox"> Dæmp skærmen om natten (22–06) efter 1 min. uden berøring</label>
+
+      <h3>Hvad skal vises?</h3>
+      <p class="muted">Tom = automatisk valg. Sæt flueben for selv at bestemme.</p>
+      <div id="pickers"></div>
+
+      <div class="row end">
+        <button type="button" class="btn ghost danger" data-action="reset">Nulstil alt</button>
+        <button type="button" class="btn primary" data-action="save">Gem</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="dimmer" class="dimmer" hidden></div>
+
+  <script src="demo.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
