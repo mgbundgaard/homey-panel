@@ -2,26 +2,25 @@
 window.DemoHomey = (() => {
   const num = (title, value, units, extra = {}) => ({ type: 'number', title, value, units, setable: false, ...extra });
   const zones = {
-    z1: { id: 'z1', name: 'Stue' }, z2: { id: 'z2', name: 'Køkken' }, z3: { id: 'z3', name: 'Soveværelse' },
-    z4: { id: 'z4', name: 'Entré' }, z5: { id: 'z5', name: 'Børneværelse' }, z6: { id: 'z6', name: 'Teknikrum' },
+    z1: { name: 'Opholdsstue' }, z2: { name: 'Køkken' }, z3: { name: 'Primært soveværelse' }, z4: { name: 'Gang' },
+    z5: { name: 'Børneværelse' }, z6: { name: 'Kontor' }, z7: { name: 'Badeværelse' }, z8: { name: 'Toilet' }, z9: { name: 'Hjem' },
   };
-  const light = (id, name, zone, on, dim) => ({
-    id, name, zone, class: 'light', available: true,
+  const light = (id, name, zone, on, dim, cls = 'light') => ({
+    id, name, zone, class: cls, available: true,
     capabilitiesObj: {
       onoff: { type: 'boolean', title: 'Tændt', value: on, setable: true },
       ...(dim != null ? { dim: { type: 'number', title: 'Lysstyrke', value: dim, min: 0, max: 1, step: 0.01, setable: true } } : {}),
     },
   });
-  const sensor = (id, name, zone, t, h, co2) => ({
-    id, name, zone, class: 'sensor', available: true,
+  const thermo = (id, name, zone, t, tg) => ({
+    id, name, zone, class: 'thermostat', available: true, driverId: 'homey:app:com.uponor.smatrix:thermostat',
     capabilitiesObj: {
       measure_temperature: num('Temperatur', t, '°C'),
-      ...(h != null ? { measure_humidity: num('Luftfugtighed', h, '%') } : {}),
-      ...(co2 != null ? { measure_co2: num('CO₂', co2, 'ppm') } : {}),
+      target_temperature: { type: 'number', title: 'Ønsket temperatur', value: tg, min: 5, max: 35, step: 0.5, units: '°C', setable: true },
     },
   });
-  const speaker = (id, name, zone, playing, track, artist, vol) => ({
-    id, name, zone, class: 'speaker', available: true,
+  const speaker = (id, name, zone, playing, track, artist, vol, driverId = 'homey:app:com.sonos:speaker') => ({
+    id, name, zone, class: 'speaker', available: true, driverId,
     capabilitiesObj: {
       speaker_playing: { type: 'boolean', title: 'Afspiller', value: playing, setable: true },
       speaker_prev: { type: 'boolean', title: 'Forrige', value: false, setable: true },
@@ -34,29 +33,41 @@ window.DemoHomey = (() => {
   });
   const list = [
     {
-      id: 'vent', name: 'Komfovent C6', zone: 'z6', class: 'airtreatment', available: true,
+      id: 'vent', name: 'Komfovent C6/C6M', zone: 'z9', class: 'fan', available: true, driverId: 'homey:app:com.trondole.komfovent-c6m:c6m',
       capabilitiesObj: {
         onoff: { type: 'boolean', title: 'Tændt', value: true, setable: true },
         measure_temperature: num('Indblæsning', 20.4, '°C'),
-        measure_temperature_outdoor: num('Ude', 3.1, '°C'),
         measure_humidity: num('Fugt', 41, '%'),
+        measure_power: num('Effekt', 232, 'W'),
         ventilation_mode: { type: 'enum', title: 'Tilstand', value: 'normal', setable: true,
           values: [{ id: 'away', title: 'Ude' }, { id: 'normal', title: 'Normal' }, { id: 'intensive', title: 'Intensiv' }, { id: 'boost', title: 'Boost' }] },
-        target_temperature: { type: 'number', title: 'Ønsket temperatur', value: 21, min: 15, max: 25, step: 0.5, units: '°C', setable: true },
         alarm_filter: { type: 'boolean', title: 'Skift filter', value: false },
       },
     },
-    sensor('s1', 'Stue', 'z1', 21.6, 44, 620),
-    sensor('s2', 'Soveværelse', 'z3', 19.2, 48),
-    sensor('s3', 'Børneværelse', 'z5', 20.5, 46),
-    sensor('s4', 'Køkken', 'z2', 22.1, 51),
-    light('l1', 'Loftlampe', 'z1', true, 0.7), light('l2', 'Gulvlampe', 'z1', true, 0.35), light('l3', 'Vindueslampe', 'z1', false, null),
-    light('l4', 'Køkkenø', 'z2', true, 0.9), light('l5', 'Under skabe', 'z2', false, 0.5),
-    light('l6', 'Sengelampe', 'z3', false, 0.3), light('l7', 'Loft', 'z3', false, 0.8),
-    light('l8', 'Natlampe', 'z5', false, 0.15), light('l9', 'Entré', 'z4', true, null),
+    { id: 'pur', name: 'STARKVIND Air Purifier', zone: 'z9', class: 'fan', available: true,
+      capabilitiesObj: { onoff: { type: 'boolean', title: 'Tændt', value: false, setable: true }, measure_pm25: num('PM2.5', 4, 'µg/m³'),
+        fan_mode: { type: 'enum', title: 'Hastighed', value: 'auto', setable: true, values: [{ id: 'auto', title: 'Auto' }, { id: '1', title: '1' }, { id: '3', title: '3' }, { id: '5', title: '5' }] } } },
+    thermo('t1', 'Stue', 'z1', 21.8, 22), thermo('t2', 'Soveværelse', 'z3', 19.1, 19), thermo('t3', 'Værelse nummer to', 'z5', 20.6, 21),
+    thermo('t4', 'Værelse nummer et', 'z9', 20.2, 20), thermo('t5', 'Forældrebadeværelse', 'z7', 22.4, 23), thermo('t6', 'Badeværelse', 'z8', 21.9, 22),
+    thermo('t7', 'Kontor lille', 'z6', 20.8, 21), thermo('t8', 'Gang', 'z4', 20.1, 20),
+    light('l1', 'TRÅDFRI Dimmable Transformer', 'z3', true, 0.6), light('l2', 'JETSTRÖM loftslampe', 'z3', false, 0.8),
+    light('l3', 'Bedroom light', 'z3', false, null, 'socket'), light('l4', 'KAJPLATS GU10', 'z7', false, 0.7),
+    light('l5', 'BoxDIMZ', 'z9', false, 0.5), light('l6', 'Shelly Outdoorlight', 'z4', true, null),
     speaker('sp1', 'Stue', 'z1', true, 'Kind of Blue — So What', 'Miles Davis', 0.28),
-    speaker('sp2', 'Køkken', 'z2', false, '', '', 0.4),
+    speaker('sp2', 'Køkken', 'z2', false, '', '', 0.4), speaker('sp3', 'Kontor', 'z6', false, '', '', 0.2),
+    speaker('cc', 'Stue', 'z1', false, '', '', 0.5, 'homey:app:com.google.chromecast:chromecast'),
+    { id: 'vac', name: 'L50 Ultra', zone: 'z6', class: 'vacuumcleaner', available: true, driverId: 'homey:app:com.dreame:vacuum',
+      capabilitiesObj: { onoff: { type: 'boolean', title: 'Gør rent', value: false, setable: true }, measure_battery: num('Batteri', 100, '%'),
+        vacuum_status: { type: 'string', title: 'Status', value: 'Oplader' } } },
+    { id: 'mow', name: 'Navimow i206 AWD', zone: 'z9', class: 'other', available: true, driverId: 'homey:app:com.navimow:mower',
+      capabilitiesObj: { onoff: { type: 'boolean', title: 'Slå græs', value: false, setable: true }, measure_battery: num('Batteri', 84, '%'),
+        mower_status: { type: 'string', title: 'Status', value: 'I ladestation' } } },
+    { id: 'dw', name: 'Opvaskemaskine', zone: 'z2', class: 'other', available: true, driverId: 'homey:app:com.homeconnect:dishwasher',
+      capabilitiesObj: { operation_state: { type: 'string', title: 'Status', value: 'Kører' }, remaining_time: { type: 'string', title: 'Tid tilbage', value: '0:42' } } },
+    { id: 'dry', name: 'Tørretumbler', zone: 'z4', class: 'dryer', available: true, driverId: 'homey:app:com.lg.thinq:dryer',
+      capabilitiesObj: { dryer_state: { type: 'string', title: 'Status', value: 'Færdig' } } },
   ];
+  Object.keys(zones).forEach((k) => (zones[k].id = k));
   list.forEach((d) => (d.capabilities = Object.keys(d.capabilitiesObj)));
   const devices = Object.fromEntries(list.map((d) => [d.id, d]));
   const moods = { m1: { name: 'Morgen' }, m2: { name: 'Hygge' }, m3: { name: 'Film' }, m4: { name: 'Godnat' } };

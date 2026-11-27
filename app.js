@@ -12,7 +12,7 @@
 
   const defaults = {
     address: '', token: '', demo: false, night: true,
-    pick: { climate: null, lights: null, speakers: null, moods: null, flows: null },
+    pick: { climate: null, lights: null, speakers: null, appliances: null, moods: null, flows: null },
   };
   let cfg = load();
 
@@ -91,12 +91,20 @@
   const zoneName = (id) => S.zones[id]?.name || 'Andet';
 
   // ---------- Klassificering ----------
+  const driverOf = (d) => String(d.driverId || d.driverUri || d.driver?.id || '');
   const isSpeaker = (d) => d.class === 'speaker' || has(d, 'speaker_playing');
-  const isLight = (d) => !isSpeaker(d) && (d.class === 'light' || d.virtualClass === 'light');
-  const CLIMATE_CLASSES = ['fan', 'airtreatment', 'thermostat', 'heater', 'sensor', 'airconditioning', 'airpurifier', 'dehumidifier', 'humidifier'];
-  const isVent = (d) => /komfovent|ventilat/i.test(d.name) || ['fan', 'airtreatment'].includes(d.class) || has(d, 'target_temperature') && !isLight(d);
-  const isClimate = (d) => !isSpeaker(d) && !isLight(d) &&
-    (isVent(d) || (CLIMATE_CLASSES.includes(d.class) && (has(d, 'measure_temperature') || has(d, 'measure_humidity') || has(d, 'measure_co2'))));
+  const isSonos = (d) => /sonos/i.test(driverOf(d));
+  const isLight = (d) => !isSpeaker(d) && (d.class === 'light' || d.virtualClass === 'light' ||
+    (d.class === 'socket' && /light|lys|lampe/i.test(d.name)));
+  const isVent = (d) => /komfovent|ventilat/i.test(d.name) || ['fan', 'airtreatment', 'airpurifier', 'dehumidifier', 'humidifier'].includes(d.class);
+  const isThermo = (d) => !isVent(d) && !isLight(d) && (['thermostat', 'heater'].includes(d.class) || has(d, 'target_temperature'));
+  const hasClimateMeasure = (d) => has(d, 'measure_temperature') || has(d, 'measure_humidity') || has(d, 'measure_co2');
+  const isClimate = (d) => !isSpeaker(d) && !isLight(d) && !isAppliance(d) &&
+    (isVent(d) || isThermo(d) || (['sensor', 'airconditioning'].includes(d.class) && hasClimateMeasure(d)));
+  const APPLIANCES = ['vacuumcleaner', 'dryer', 'washer', 'dishwasher', 'lawnmower', 'oven', 'coffeemachine', 'kettle'];
+  const isAppliance = (d) => APPLIANCES.includes(d.class) ||
+    /navimow|opvask|tørretumbler|vaskemaskine|støvsuger/i.test(d.name) || /homeconnect|thinq|dreame|navimow/i.test(driverOf(d));
+  const isMusic = (devs) => { const sonos = devs.some(isSonos); return (d) => isSpeaker(d) && (!sonos || isSonos(d)); };
 
   function pickList(section, all, auto) {
     const p = cfg.pick[section];
@@ -134,26 +142,50 @@
       style="--pct:${pct}%" data-dev="${d.id}" data-cap="${cap}" data-scale="${isDim ? 100 : 1}">`;
   }
 
+  function genericCard(d, compact = false) {
+    const caps = d.capabilities || Object.keys(d.capabilitiesObj || {});
+    const o = (c) => d.capabilitiesObj[c] || {};
+    const measures = caps.filter((c) => (c.startsWith('measure_') || c.startsWith('meter_')) && typeof capVal(d, c) === 'number' && !(compact && c.startsWith('meter_')));
+    const strings = caps.filter((c) => !o(c).setable && (o(c).type === 'string' || o(c).type === 'enum') && capVal(d, c) != null && capVal(d, c) !== '');
+    const alarms = caps.filter((c) => c.startsWith('alarm_') && capVal(d, c) === true);
+    const controls = caps.filter((c) => o(c).setable && c !== 'onoff' && !/^button/.test(c) && (!compact || o(c).type !== 'number'));
+    const enumTitle = (c) => { const v = capVal(d, c); const hit = (o(c).values || []).find((x) => String(x.id) === String(v)); return hit ? (hit.title?.da || hit.title?.en || hit.title) : v; };
+    return `<div class="card ${d.available === false ? 'offline' : ''}">
+      <div class="card-title"><span>${esc(d.name)}</span>
+        ${has(d, 'onoff') && o('onoff').setable !== false ? `<button class="switch ${capVal(d, 'onoff') ? 'on' : ''}" data-action="toggle" data-dev="${d.id}" data-cap="onoff" aria-label="Tænd/sluk"></button>` : ''}
+      </div>
+      ${measures.length ? `<div class="measures">${measures.map((c) => `<div class="measure"><div class="v">${fmt(capVal(d, c))}${esc(unitOf(d, c))}</div><div class="l">${esc(titleOf(d, c))}</div></div>`).join('')}</div>` : ''}
+      ${strings.map((c) => `<div class="kv"><span>${esc(titleOf(d, c))}</span><b>${esc(enumTitle(c))}</b></div>`).join('')}
+      ${controls.map((c) => controlHTML(d, c)).join('')}
+      ${alarms.map((c) => `<div class="alarm">⚠ ${esc(titleOf(d, c))}</div>`).join('')}
+    </div>`;
+  }
+
+  function thermoHTML(d) {
+    const t = capVal(d, 'measure_temperature'), tg = capVal(d, 'target_temperature'), h = capVal(d, 'measure_humidity');
+    const o = d.capabilitiesObj.target_temperature || {};
+    const step = o.step || 0.5;
+    const heating = tg != null && t != null && tg > t + 0.2;
+    return `<div class="sensor thermo ${heating ? 'heating' : ''} ${d.available === false ? 'offline' : ''}">
+      <div class="name">${esc(d.name)}</div>
+      <div class="big">${typeof t === 'number' ? fmt(t) + '°' : '–'}</div>
+      ${typeof h === 'number' ? `<div class="small">${fmt(h, 0)}% fugt</div>` : ''}
+      ${has(d, 'target_temperature') && o.setable !== false ? `<div class="tgt">
+        <button data-action="step" data-dev="${d.id}" data-cap="target_temperature" data-delta="-${step}" aria-label="Lavere">−</button>
+        <span>${typeof tg === 'number' ? fmt(tg) + '°' : '–'}</span>
+        <button data-action="step" data-dev="${d.id}" data-cap="target_temperature" data-delta="${step}" aria-label="Højere">+</button></div>` : ''}
+    </div>`;
+  }
+
   function renderClimate(list) {
     if (!list.length) return '<div class="empty">Ingen klima-enheder fundet. Vælg dem under Indstillinger.</div>';
-    const vents = list.filter(isVent), sensors = list.filter((d) => !isVent(d));
-    let html = '';
-    for (const d of vents) {
-      const caps = d.capabilities || Object.keys(d.capabilitiesObj || {});
-      const measures = caps.filter((c) => c.startsWith('measure_') && typeof capVal(d, c) === 'number');
-      const alarms = caps.filter((c) => c.startsWith('alarm_') && capVal(d, c) === true);
-      const controls = caps.filter((c) => d.capabilitiesObj[c]?.setable && c !== 'onoff' && !/^button/.test(c));
-      html += `<div class="card ${d.available === false ? 'offline' : ''}">
-        <div class="card-title"><span>${esc(d.name)}</span>
-          ${has(d, 'onoff') ? `<button class="switch ${capVal(d, 'onoff') ? 'on' : ''}" data-action="toggle" data-dev="${d.id}" data-cap="onoff" aria-label="Tænd/sluk"></button>` : ''}
-        </div>
-        ${measures.length ? `<div class="measures">${measures.map((c) => `<div class="measure"><div class="v">${fmt(capVal(d, c))}${esc(unitOf(d, c))}</div><div class="l">${esc(titleOf(d, c))}</div></div>`).join('')}</div>` : ''}
-        ${controls.map((c) => controlHTML(d, c)).join('')}
-        ${alarms.map((c) => `<div class="alarm">⚠ ${esc(titleOf(d, c))}</div>`).join('')}
-      </div>`;
-    }
+    const vents = list.filter(isVent).sort((a, b) => (/komfovent/i.test(b.name) ? 1 : 0) - (/komfovent/i.test(a.name) ? 1 : 0));
+    const thermos = list.filter((d) => !isVent(d) && isThermo(d)).sort((a, b) => a.name.localeCompare(b.name, 'da'));
+    const sensors = list.filter((d) => !isVent(d) && !isThermo(d));
+    let html = vents.map((d) => genericCard(d)).join('');
+    if (thermos.length) html += `<h3 class="sub">Varme</h3><div class="sensors">${thermos.map(thermoHTML).join('')}</div>`;
     if (sensors.length) {
-      html += `<div class="sensors">${sensors.map((d) => {
+      html += `<div class="sensors" style="margin-top:10px">${sensors.map((d) => {
         const t = capVal(d, 'measure_temperature'), h = capVal(d, 'measure_humidity'), co2 = capVal(d, 'measure_co2');
         const big = typeof t === 'number' ? fmt(t) + '°' : typeof h === 'number' ? fmt(h, 0) + '%' : typeof co2 === 'number' ? fmt(co2, 0) : '–';
         const small = [typeof t === 'number' && typeof h === 'number' ? fmt(h, 0) + '% fugt' : '', typeof co2 === 'number' && typeof t === 'number' ? fmt(co2, 0) + ' ppm' : ''].filter(Boolean).join(' · ');
@@ -161,6 +193,11 @@
       }).join('')}</div>`;
     }
     return html;
+  }
+
+  function renderAppliances(list) {
+    if (!list.length) return '<div class="empty">Ingen apparater valgt.</div>';
+    return `<div class="appl">${list.map((d) => genericCard(d, true)).join('')}</div>`;
   }
 
   function controlHTML(d, cap) {
@@ -230,11 +267,12 @@
       S.speaker = (list.find((d) => capVal(d, 'speaker_playing')) || list[0]).id;
     }
     const d = list.find((x) => x.id === S.speaker);
+    const label = (s) => list.filter((x) => x.name === s.name).length > 1 ? `${s.name} (${isSonos(s) ? 'Sonos' : zoneName(s.zone)})` : s.name;
     const playing = !!capVal(d, 'speaker_playing');
     const muted = !!capVal(d, 'volume_mute');
     const art = cfg.demo ? '' : imageUrl(d);
     return `<div class="card ${d.available === false ? 'offline' : ''}">
-      ${list.length > 1 ? `<div class="tabs">${list.map((s) => `<button class="${s.id === d.id ? 'on' : ''}" data-action="speaker" data-id="${s.id}">${capVal(s, 'speaker_playing') ? '<span class="dot"></span>' : ''}${esc(s.name)}</button>`).join('')}</div>` : `<div class="card-title">${esc(d.name)}</div>`}
+      ${list.length > 1 ? `<div class="tabs">${list.map((s) => `<button class="${s.id === d.id ? 'on' : ''}" data-action="speaker" data-id="${s.id}">${capVal(s, 'speaker_playing') ? '<span class="dot"></span>' : ''}${esc(label(s))}</button>`).join('')}</div>` : `<div class="card-title">${esc(d.name)}</div>`}
       <div class="np">
         <div class="art" ${art ? `style="background-image:url('${esc(art)}')"` : ''}>${art ? '' : ICON.note}</div>
         <div><div class="track">${esc(capVal(d, 'speaker_track') || (playing ? 'Afspiller' : 'Intet spiller'))}</div>
@@ -264,7 +302,8 @@
     const devs = allDevices();
     put('climate', renderClimate(pickList('climate', devs, isClimate)));
     put('lights', renderLights(pickList('lights', devs, isLight)));
-    put('speakers', renderSpeakers(pickList('speakers', devs, isSpeaker)));
+    put('speakers', renderSpeakers(pickList('speakers', devs, isMusic(devs))));
+    put('appliances', renderAppliances(pickList('appliances', devs, isAppliance)));
     put('moods', renderChips(pickList('moods', moodList(), () => true), 'mood'));
     put('flows', renderChips(pickList('flows', S.flows, () => true), 'flow'));
   }
@@ -397,7 +436,8 @@
     const sections = [
       ['climate', 'Klima & ventilation', devs, isClimate, (d) => zoneName(d.zone)],
       ['lights', 'Lys', devs, isLight, (d) => zoneName(d.zone)],
-      ['speakers', 'Musik', devs, isSpeaker, (d) => zoneName(d.zone)],
+      ['speakers', 'Musik', devs, isMusic(devs), (d) => zoneName(d.zone)],
+      ['appliances', 'Apparater', devs, isAppliance, (d) => zoneName(d.zone)],
       ['moods', 'Stemninger', moodList(), () => true, () => ''],
       ['flows', 'Flows', S.flows, () => true, (f) => (f.kind === 'adv' ? 'Avanceret' : '')],
     ];
@@ -405,7 +445,7 @@
     $('#pickers').innerHTML = sections.map(([key, title, items, auto, sub]) => {
       const chosen = cfg.pick[key];
       const shown = new Set(pickList(key, items, auto).map((x) => x.id));
-      const candidates = key === 'moods' || key === 'flows' ? items : items.filter((d) => auto(d) || (chosen || []).includes(d.id) || key === 'climate' && (has(d, 'measure_temperature') || has(d, 'measure_humidity')) || key === 'lights' && has(d, 'onoff'));
+      const candidates = key === 'moods' || key === 'flows' ? items : items.filter((d) => auto(d) || (chosen || []).includes(d.id) || key === 'climate' && (has(d, 'measure_temperature') || has(d, 'measure_humidity')) || key === 'lights' && has(d, 'onoff') || key === 'speakers' && isSpeaker(d) || key === 'appliances' && !isLight(d) && !isSpeaker(d));
       return `<details class="picker" data-key="${key}"><summary>${title} <span class="muted">— ${chosen?.length ? 'valgt manuelt' : 'automatisk'} (${shown.size})</span></summary>
         <div class="opts">${candidates.map((x) => `<label><input type="checkbox" value="${esc(x.id)}" ${chosen?.length && shown.has(x.id) ? 'checked' : ''}> ${esc(x.name)} <small>${sub(x) === x.name ? '' : esc(sub(x))}</small></label>`).join('') || '<span class="muted">Intet at vælge</span>'}</div></details>`;
     }).join('');
